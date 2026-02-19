@@ -20,7 +20,7 @@ The goal of this project is to program a VEX VR robot to autonomously navigate a
 
 
 ## Video Demonstration
-
+https://shu.cloud.panopto.eu/Panopto/Pages/Viewer.aspx?id=e5a1287a-3b3c-4ab5-bb09-b3f6001c091f
 ## References
 - https://en.wikipedia.org/wiki/Maze-solving_algorithm#Wall_follower
 - https://www.geeksforgeeks.org/dsa/breadth-first-search-or-bfs-for-a-graph/
