@@ -17,171 +17,182 @@ distance = front_distance
 magnet = Electromagnet("magnet", 7)
 location = Location("location", 9)
 
-#endregion VEXcode Generated Robot Configuration
+# ═══════════════════════════════════════════════════════════════════
+#  Project     : Distinction Level Maze Solver
+#  Author      : Tamal Jana
+DIR_X = [ 0,  1,  0, -1]
+DIR_Y = [ 1,  0, -1,  0]
 
-# ------------------------------------------
-#   Project:      Distinction Level Maze Solver
-#   Author:       TAMAL JANA
-#   Description:  Explores, Maps, and Calculates Shortest Path
-# ------------------------------------------
+CELL_MM         = 250   
+WALL_THRESHOLD  = 200   
 
 class MazeBot:
+
     def __init__(self):
-        self.GRID_SIZE = 250  
-    
-        self.map_graph = {}
-        
-        self.gx = 0
-        self.gy = 0
-        
-        self.heading_idx = 0 
+        self.map_graph   = {}      
+        self.visited     = set()   
+        self.gx          = 0       
+        self.gy          = 0       
+        self.heading_idx = 0       
+        self.exit_node   = None    
 
-    def record_movement(self, new_gx, new_gy):
-       
-        current_node = (self.gx, self.gy)
-        new_node = (new_gx, new_gy)
-        
-        if current_node not in self.map_graph: self.map_graph[current_node] = []
-        if new_node not in self.map_graph: self.map_graph[new_node] = []
-        
-        if new_node not in self.map_graph[current_node]:
-            self.map_graph[current_node].append(new_node)
-        if current_node not in self.map_graph[new_node]:
-            self.map_graph[new_node].append(current_node)
-            
-       
-        self.gx = new_gx
-        self.gy = new_gy
+    def add_edge(self, x1, y1, x2, y2):
+        n1, n2 = (x1, y1), (x2, y2)
+        self.map_graph.setdefault(n1, [])
+        self.map_graph.setdefault(n2, [])
+        if n2 not in self.map_graph[n1]:
+            self.map_graph[n1].append(n2)
+        if n1 not in self.map_graph[n2]:
+            self.map_graph[n2].append(n1)
 
-    def solve_shortest_path_bfs(self, target_node):
-       
-        start_node = (self.gx, self.gy)
-        
-        queue = [[start_node]]
-        visited = {start_node}
-        
+    def turn_to(self, target_h):
+        diff = (target_h - self.heading_idx) % 4
+        if diff == 1:
+            drivetrain.turn_for(RIGHT, 90, DEGREES)
+        elif diff == 2:
+            drivetrain.turn_for(RIGHT, 180, DEGREES)
+        elif diff == 3:
+            drivetrain.turn_for(LEFT, 90, DEGREES)
+        self.heading_idx = target_h
+
+    def step(self, h, nx, ny):
+        self.turn_to(h)
+        drivetrain.drive_for(FORWARD, CELL_MM, MM)
+        self.gx, self.gy = nx, ny
+
+    def bfs(self, start, goal):
+        if start == goal:
+            return [start]
+        queue   = [[start]]
+        visited = {start}
         while queue:
             path = queue.pop(0)
             node = path[-1]
-            
-            if node == target_node:
-                return path
-            
-            if node in self.map_graph:
-                for neighbor in self.map_graph[node]:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        new_path = list(path)
-                        new_path.append(neighbor)
-                        queue.append(new_path)
+            for neighbour in self.map_graph.get(node, []):
+                if neighbour not in visited:
+                    if neighbour == goal:
+                        return path + [neighbour]
+                    visited.add(neighbour)
+                    queue.append(path + [neighbour])
         return []
+
+def follow_path(bot, path):
+    
+    for i in range(1, len(path)):
+        cur = path[i - 1]
+        nxt = path[i]
+        dx  = nxt[0] - cur[0]
+        dy  = nxt[1] - cur[1]
+        for h in range(4):
+            if DIR_X[h] == dx and DIR_Y[h] == dy:
+                bot.step(h, nxt[0], nxt[1])
+                break
 
 def main():
     drivetrain.set_drive_velocity(100, PERCENT)
     drivetrain.set_turn_velocity(100, PERCENT)
-    
-    bot = MazeBot()
-    
-    brain.clear()
-    brain.print("Phase 1: Mapping Maze...")
-    
-    # ---------------------------------------------------------
-    # PHASE 1: EXPLORATION (Right-Hand Rule)
-    # ---------------------------------------------------------
-    while not down_eye.detect(RED):
-        
-        drivetrain.turn_for(RIGHT, 90, DEGREES)
-        bot.heading_idx = (bot.heading_idx + 1) % 4 
-        
-        
-        if distance.get_distance(MM) > 200:
-            drivetrain.drive_for(FORWARD, 250, MM)
-            
-            
-            dx, dy = 0, 0
-            if bot.heading_idx == 0: dy = 1   # North
-            elif bot.heading_idx == 1: dx = 1 # East
-            elif bot.heading_idx == 2: dy = -1 # South
-            elif bot.heading_idx == 3: dx = -1 # West
-            bot.record_movement(bot.gx + dx, bot.gy + dy)
-            continue 
-            
-        
-        drivetrain.turn_for(LEFT, 90, DEGREES)
-        bot.heading_idx = (bot.heading_idx - 1) % 4
-        
-        if distance.get_distance(MM) > 200:
-            drivetrain.drive_for(FORWARD, 250, MM)
-            
-            dx, dy = 0, 0
-            if bot.heading_idx == 0: dy = 1
-            elif bot.heading_idx == 1: dx = 1
-            elif bot.heading_idx == 2: dy = -1
-            elif bot.heading_idx == 3: dx = -1
-            bot.record_movement(bot.gx + dx, bot.gy + dy)
+
+    bot   = MazeBot()
+    START = (0, 0)
+
+    bot.visited.add((0, -1))
+
+    # PHASE 1 : Full DFS exploration and maze mapping
+    brain.print("Phase 1: Mapping maze...")
+
+    bot.visited.add(START)
+    dfs_stack = [START]  
+    while dfs_stack:
+        cx, cy = bot.gx, bot.gy
+
+        if down_eye.detect(RED):
+            if bot.exit_node is None:
+                bot.exit_node = (cx, cy)
+                brain.print("Exit at", bot.exit_node)
+            dfs_stack.pop()
+            if not dfs_stack:
+                break
+            bx, by = dfs_stack[-1]
+            dx, dy = bx - cx, by - cy
+            for h in range(4):
+                if DIR_X[h] == dx and DIR_Y[h] == dy:
+                    bot.step(h, bx, by)
+                    break
             continue
 
-        
-        drivetrain.turn_for(LEFT, 90, DEGREES)
-        bot.heading_idx = (bot.heading_idx - 1) % 4
-        
-        if distance.get_distance(MM) > 200:
-            drivetrain.drive_for(FORWARD, 250, MM)
-            
-            dx, dy = 0, 0
-            if bot.heading_idx == 0: dy = 1
-            elif bot.heading_idx == 1: dx = 1
-            elif bot.heading_idx == 2: dy = -1
-            elif bot.heading_idx == 3: dx = -1
-            bot.record_movement(bot.gx + dx, bot.gy + dy)
-            continue
+        first_unvisited_h  = None
+        first_unvisited_nx = None
+        first_unvisited_ny = None
 
-        
-        drivetrain.turn_for(LEFT, 90, DEGREES)
-        bot.heading_idx = (bot.heading_idx - 1) % 4
-        drivetrain.drive_for(FORWARD, 250, MM)
-        
-        dx, dy = 0, 0
-        if bot.heading_idx == 0: dy = 1
-        elif bot.heading_idx == 1: dx = 1
-        elif bot.heading_idx == 2: dy = -1
-        elif bot.heading_idx == 3: dx = -1
-        bot.record_movement(bot.gx + dx, bot.gy + dy)
+        for h in range(4):
+            bot.turn_to(h)                          
+            nx = cx + DIR_X[h]
+            ny = cy + DIR_Y[h]
 
-    # ---------------------------------------------------------
-    # PHASE 2: CALCULATE FASTEST ROUTE
-    # ---------------------------------------------------------
+            if distance.get_distance(MM) > WALL_THRESHOLD:
+                bot.add_edge(cx, cy, nx, ny)
+
+                if (nx, ny) not in bot.visited and first_unvisited_h is None:
+                    first_unvisited_h  = h
+                    first_unvisited_nx = nx
+                    first_unvisited_ny = ny
+        if first_unvisited_h is not None:
+            next_cell = (first_unvisited_nx, first_unvisited_ny)
+            bot.visited.add(next_cell)
+            dfs_stack.append(next_cell)
+            bot.step(first_unvisited_h, first_unvisited_nx, first_unvisited_ny)
+        else:
+            dfs_stack.pop()
+            if not dfs_stack:
+                break   
+
+            bx, by = dfs_stack[-1]
+            dx, dy = bx - cx, by - cy
+            for h in range(4):
+                if DIR_X[h] == dx and DIR_Y[h] == dy:
+                    bot.step(h, bx, by)
+                    break
     brain.clear()
-    brain.print("Exit Found! Calculating Path...")
-    
-    fastest_path = bot.solve_shortest_path_bfs((0, 0))
-    
-    if not fastest_path:
-        brain.print("Error: No path home.")
-        stop()
+    brain.print("Map done:", len(bot.visited) - 1, "cells")   
 
-    # ---------------------------------------------------------
-    # PHASE 3: RETURN HOME
-    # ---------------------------------------------------------
-    brain.print("Returning Home (Optimized)...")
+    if bot.exit_node is None:
+        brain.print("ERROR: No exit found!")
+        return
+    # PHASE 2 : Navigate the BFS-shortest path from start to exit
+    brain.print("Phase 2: Racing to exit...")
+
+    path_to_exit = bot.bfs(START, bot.exit_node)
+    if not path_to_exit:
+        brain.print("ERROR: No path to exit!")
+        return
+
+    brain.print("Shortest path:", len(path_to_exit) - 1, "steps")
+
+    pen.set_pen_color(BLUE)
+    pen.move(DOWN)
+    follow_path(bot, path_to_exit)
+    pen.move(UP)
+
+    brain.clear()
+    brain.print("Exit reached!")
+
+    # PHASE 3 : Navigate the BFS-shortest path back to start (home)
+    brain.print("Phase 3: Returning home...")
+
+    path_to_home = bot.bfs(bot.exit_node, START)
+    if not path_to_home:
+        brain.print("ERROR: No path home!")
+        return
+
     pen.set_pen_color(GREEN)
     pen.move(DOWN)
-    
-    for i in range(1, len(fastest_path)):
-        target = fastest_path[i] 
-        current = fastest_path[i-1] 
-        
-        req_heading = 0
-        if target[1] > current[1]: req_heading = 0   # North
-        elif target[0] > current[0]: req_heading = 1 # East
-        elif target[1] < current[1]: req_heading = 2 # South
-        elif target[0] < current[0]: req_heading = 3 # West
-        
-       
-        drivetrain.turn_to_heading(req_heading * 90, DEGREES)
-        drivetrain.drive_for(FORWARD, 250, MM)
-        
+    follow_path(bot, path_to_home)
+    pen.move(UP)
+
     brain.clear()
-    brain.print("Assessment Complete.")
+    brain.print("Home! Mission complete.")
+    brain.print("Cells mapped:", len(bot.visited) - 1)
+    brain.print("Exit path:", len(path_to_exit) - 1, "steps")
+
 
 vr_thread(main)
